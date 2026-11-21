@@ -305,6 +305,11 @@
         const GRID_SIZE = 20;
         const TILE_COUNT = canvas.width / GRID_SIZE;
 
+        // Cấu hình mật khẩu Admin ẩn (có thể đổi tùy ý)
+        const ADMIN_PASSWORD = 'admin123';
+        let isAdmin = false;
+        let keyBuffer = '';
+
         let snake = [];
         let apple = { x: 15, y: 15 };
         let dx = 0;
@@ -348,6 +353,26 @@
             gain.connect(audioCtx.destination);
             osc.start();
             osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function addScore(points) {
+            score += points;
+            scoreEl.textContent = score;
+            if (score > highScore) {
+                highScore = score;
+                highScoreEl.textContent = highScore;
+                localStorage.setItem('snake_high_score', highScore);
+            }
+        }
+
+        function eatApple() {
+            addScore(10);
+            playTone(540, 'sine', 0.11);
+
+            if (gameSpeed > 55) {
+                gameSpeed -= 2;
+            }
+            spawnApple();
         }
 
         function initGame() {
@@ -399,14 +424,12 @@
             let nextY = snake[0].y + dy;
 
             if (wrapWalls) {
-                // Xử lý đi xuyên tường sang cạnh đối diện
                 if (nextX < 0) nextX = TILE_COUNT - 1;
                 else if (nextX >= TILE_COUNT) nextX = 0;
 
                 if (nextY < 0) nextY = TILE_COUNT - 1;
                 else if (nextY >= TILE_COUNT) nextY = 0;
             } else {
-                // Kiểm tra va chạm tường cứng
                 if (nextX < 0 || nextX >= TILE_COUNT || nextY < 0 || nextY >= TILE_COUNT) {
                     gameOver();
                     return;
@@ -425,20 +448,7 @@
 
             // Kiểm tra ăn táo
             if (head.x === apple.x && head.y === apple.y) {
-                score += 10;
-                scoreEl.textContent = score;
-                playTone(540, 'sine', 0.11);
-                
-                if (score > highScore) {
-                    highScore = score;
-                    highScoreEl.textContent = highScore;
-                    localStorage.setItem('snake_high_score', highScore);
-                }
-
-                if (gameSpeed > 55) {
-                    gameSpeed -= 2;
-                }
-                spawnApple();
+                eatApple();
             } else {
                 snake.pop();
             }
@@ -568,8 +578,19 @@
             btn.addEventListener('mousedown', handlePress);
         });
 
-        // Điều khiển bàn phím
+        // Điều khiển bàn phím + lắng nghe mật khẩu Admin ẩn
         document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+
+            // Gõ mật khẩu lần 1 để BẬT, gõ lại lần nữa để TẮT (vẫn không hiện thông báo)
+            if (e.key.length === 1) {
+                keyBuffer = (keyBuffer + key).slice(-ADMIN_PASSWORD.length);
+                if (keyBuffer === ADMIN_PASSWORD.toLowerCase()) {
+                    isAdmin = !isAdmin;
+                    keyBuffer = '';
+                }
+            }
+
             if (e.code === 'Space' && isRunning) {
                 isPaused = !isPaused;
                 if (isPaused) {
@@ -584,7 +605,22 @@
                 return;
             }
 
-            const key = e.key.toLowerCase();
+            // Chức năng riêng của tài khoản Admin
+            if (isAdmin && isRunning && !isPaused) {
+                if (key === 'q') {
+                    // Dịch chuyển đầu sâu đến thẳng quả táo và ăn luôn
+                    snake.unshift({ x: apple.x, y: apple.y });
+                    eatApple();
+                    draw();
+                    return;
+                }
+                if (key === 'e') {
+                    // Cộng thẳng 1000 điểm
+                    addScore(1000);
+                    return;
+                }
+            }
+
             if (key === 'arrowup' || key === 'w') setDirection('up');
             else if (key === 'arrowdown' || key === 's') setDirection('down');
             else if (key === 'arrowleft' || key === 'a') setDirection('left');
