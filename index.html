@@ -105,6 +105,7 @@
             border-radius: 10px;
             text-align: center;
             min-width: 68px;
+            position: relative;
         }
 
         .score-label {
@@ -118,6 +119,35 @@
             font-size: 1.05rem;
             font-weight: 700;
             color: var(--text-main);
+        }
+
+        /* Dấu ✓ và ✕ ẩn hiện nhanh */
+        .admin-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.7);
+            font-size: 2.2rem;
+            font-weight: 900;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            z-index: 20;
+        }
+
+        .admin-indicator.show {
+            opacity: 0.9;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .admin-indicator.on {
+            color: var(--accent-green);
+            text-shadow: 0 0 16px var(--accent-green-glow);
+        }
+
+        .admin-indicator.off {
+            color: var(--accent-red);
+            text-shadow: 0 0 16px rgba(239, 68, 68, 0.5);
         }
 
         .canvas-wrapper {
@@ -155,6 +185,7 @@
             text-align: center;
             padding: 20px;
             transition: opacity 0.2s ease;
+            z-index: 10;
         }
 
         .overlay.hidden {
@@ -255,7 +286,7 @@
                 </button>
             </div>
             <div class="scores">
-                <div class="score-box">
+                <div class="score-box" id="score-box">
                     <div class="score-label">Điểm</div>
                     <div class="score-value" id="score">0</div>
                 </div>
@@ -268,7 +299,8 @@
 
         <div class="canvas-wrapper wrap-border" id="canvas-wrapper">
             <canvas id="gameCanvas" width="440" height="440"></canvas>
-            
+            <div class="admin-indicator" id="admin-indicator"></div>
+
             <div class="overlay" id="overlay">
                 <h2 id="overlay-title">Sẵn sàng?</h2>
                 <p id="overlay-desc">Chế độ xuyên tường đang BẬT. Cẩn thận đừng tự cắn vào thân mình!</p>
@@ -293,6 +325,7 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const canvasWrapper = document.getElementById('canvas-wrapper');
+        const scoreBox = document.getElementById('score-box');
         const scoreEl = document.getElementById('score');
         const highScoreEl = document.getElementById('high-score');
         const overlay = document.getElementById('overlay');
@@ -301,14 +334,16 @@
         const startBtn = document.getElementById('start-btn');
         const wrapToggle = document.getElementById('wrap-toggle');
         const wrapStatus = document.getElementById('wrap-status');
+        const adminIndicator = document.getElementById('admin-indicator');
 
         const GRID_SIZE = 20;
         const TILE_COUNT = canvas.width / GRID_SIZE;
 
-        // Cấu hình mật khẩu Admin ẩn (có thể đổi tùy ý)
-        const ADMIN_PASSWORD = 'admin123';
+        // Trạng thái Admin & bộ đếm 5 lần chạm
         let isAdmin = false;
-        let keyBuffer = '';
+        let tapCount = 0;
+        let tapTimer = null;
+        let indicatorTimer = null;
 
         let snake = [];
         let apple = { x: 15, y: 15 };
@@ -322,9 +357,34 @@
         let gameSpeed = 120;
         let isRunning = false;
         let isPaused = false;
-        let wrapWalls = true; // Mặc định bật xuyên tường
+        let wrapWalls = true;
 
         highScoreEl.textContent = highScore;
+
+        // Hiện dấu ✓ hoặc ✕ trong 0.7 giây
+        function showAdminIndicator(active) {
+            clearTimeout(indicatorTimer);
+            adminIndicator.textContent = active ? '✓' : '✕';
+            adminIndicator.className = 'admin-indicator show ' + (active ? 'on' : 'off');
+            indicatorTimer = setTimeout(() => {
+                adminIndicator.classList.remove('show');
+            }, 700);
+        }
+
+        // Ấn 5 lần vào ô "Điểm" để bật / tắt Admin
+        scoreBox.addEventListener('click', () => {
+            tapCount++;
+            clearTimeout(tapTimer);
+            if (tapCount >= 5) {
+                isAdmin = !isAdmin;
+                tapCount = 0;
+                showAdminIndicator(isAdmin);
+            } else {
+                tapTimer = setTimeout(() => {
+                    tapCount = 0;
+                }, 1500);
+            }
+        });
 
         // Bật / Tắt chế độ xuyên tường
         wrapToggle.addEventListener('click', () => {
@@ -438,7 +498,6 @@
 
             const head = { x: nextX, y: nextY };
 
-            // Kiểm tra va chạm thân
             if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
                 gameOver();
                 return;
@@ -446,7 +505,6 @@
 
             snake.unshift(head);
 
-            // Kiểm tra ăn táo
             if (head.x === apple.x && head.y === apple.y) {
                 eatApple();
             } else {
@@ -578,18 +636,9 @@
             btn.addEventListener('mousedown', handlePress);
         });
 
-        // Điều khiển bàn phím + lắng nghe mật khẩu Admin ẩn
+        // Điều khiển bàn phím
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
-
-            // Gõ mật khẩu lần 1 để BẬT, gõ lại lần nữa để TẮT (vẫn không hiện thông báo)
-            if (e.key.length === 1) {
-                keyBuffer = (keyBuffer + key).slice(-ADMIN_PASSWORD.length);
-                if (keyBuffer === ADMIN_PASSWORD.toLowerCase()) {
-                    isAdmin = !isAdmin;
-                    keyBuffer = '';
-                }
-            }
 
             if (e.code === 'Space' && isRunning) {
                 isPaused = !isPaused;
@@ -608,14 +657,12 @@
             // Chức năng riêng của tài khoản Admin
             if (isAdmin && isRunning && !isPaused) {
                 if (key === 'q') {
-                    // Dịch chuyển đầu sâu đến thẳng quả táo và ăn luôn
                     snake.unshift({ x: apple.x, y: apple.y });
                     eatApple();
                     draw();
                     return;
                 }
                 if (key === 'e') {
-                    // Cộng thẳng 1000 điểm
                     addScore(1000);
                     return;
                 }
